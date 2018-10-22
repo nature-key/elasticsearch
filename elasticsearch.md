@@ -367,16 +367,81 @@ GET ecommerce/product/_search
 
   4.重启故障node ,新的master 会将失去的副本都复制一份到
   之前的shard 数据，同步一下修改，status变成green    
-    
+17._index，_type,_id
+_index:代表document在呢个index中，名称必须小写，包含了类似的document
+_type：一个大的index中的分类，名称小写
+_id：唯一标识
 
+18.自动生成id和手懂生成id
+  手动生成id
+   put /index/type/2
+  当冲数据库导入的时候就可以使用手动生成
+  自动生成
+  post /index/type
+  {
+    "content":"test"
+  }
+  自动生成id 使用GUID生成id。不会发生冲突，20个字符
+19.自定义——souce返回结果解析
 
+  返回在json 的字段
+  GET /ecommerce/product/1?_source=price  
+ 20. 全量替换。 
+   1.全量替换
+     当使用put q请求时候回全量替换，但是之前的那条数据不会删除，只不过是标记删除，当es内存不足的时候，就会把他删除，下次请求直接回去到新的document 
+   2.强制创建
+     可以使用
+     put /index/type/4/-create
+   3.DELETE test_index/test_type/1
+     和全量替换删除一样，并不是真正的删除只不过进行标记
 
+21.解决并发冲突
+  悲观锁：
+  1.线程A去读取库存获取100件
+  2.然后这条数据加上所
+  3.当线程B获取的时候，获取不到，一直等待
+  4.等更新完了之后，线程B获取导数据，进行更新数据
+  总结，就是一条进行所，一个线程只能操作一个数据，
+  使用透明，直接枷锁，不需要额外的操作，但是，性能不高
 
+  乐观锁：es默认
+  1.当线程A去获取数据
+  2，线程B也去获取数据
+  3，当线程A更新完数据，ES的数据判断是否version是否相等
+  4.相等就更新
+  5，线程B也是一样的更新，但是查看version不一样，就不重新获取version，在进行更新，version加一
+  并发执行性能高，但是繁琐，可能要重试几天，么一次都要对比vestion
+22.version版本控制
+  ES有乐观锁控制
+   1.先生成一条数据，version =1
+   2.线程A进行先修改，线程B后修改
+   3，但是同步数据是异步多线程
+   4，当后修改的数据线更新的时候，version成了2
+   5，但是数据已经你是后修改的数据
+   6，这个时候，乐观锁，会丢掉先修改的数据
+   7.这样数据就变得正确了，
 
+23，上机实现乐观锁
 
+  j基于自己的vestion 实现乐观锁模拟
+    不用es自己内部的vestion
+    ?vestion=1唯一区别就是当更新的时候，版本必须一致
+   ？verstion=1&verstion_type=external 额外的版本必须大于-varstionde的时候进行修改
 
+24.partial update
+   put index/type/id 更新和替换的语法一样
+   使用
+   post index/tyrpe/id/_update
+   {
+ “doc”:{
 
+}
 
+   }  
+
+ 本质上是一样的，但是，parual update可以减少网络请求，以及介绍冲突
+
+ 不需要吧所有的字段进行修改传过去
 
 
 
