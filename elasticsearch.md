@@ -444,16 +444,114 @@ _id：唯一标识
  不需要吧所有的字段进行修改传过去
 
 
+25.partial update
+
+ 1.拿到document 和version=1
+ 2.使用传过来的filed,更新document
+ 3.但是已经有更新过了此时version=2
+ 4,此时再去更新的时候，就会失败
+
+ retry策略 retry_on_conflict
+   1.再次获取document数据和最新version
+   2.基于最新版本再去更新，如果成功就好
+   3.如果失败，重复1，2步周，
+   4，最多重试参数的值
+
+
+26.批量查询
+
+就是一条条查询，比如要查询100条案护具，need发送100此网络请求
+，开销大，如果批量处理，就只发送一次网络请求，网络请求
+缩减100陪
+ 1.mget批量
+GET /_mget
+{
+  "docs":[
+    {
+      "_index":"test_index",
+      "_type":"test_type",
+      "_id":1
+    },
+    {
+      "_index":"test_index",
+      "_type":"test_type",
+      "_id":10
+    }
+    
+    ]
+}
+2同一个index下的type
+GET test_index/_mget
+{
+  "docs":[
+     {
+       "_type":"test_type",
+       "_id":10
+     },
+     {
+       "_type":"test_type",
+       "_id":1
+     }
+    
+    ] 
+  
+}
+3.同一个index,type下的数据
+
+GET /test_index/test_type/_mget
+{
+  "ids":[1,10]
+}
+4.尽可能使用mget处理，减少网络请求
+
+26，biuk批量增删改查
+
+ 1.delete删除一个文档。只要一个json就行
+ 2.create 强制创建
+ 3.index 普通put操作，可以创建文档，也可以全量替换
+ 4，update执行partial update操作
+
+ 一行一个json
+任意一个失败，不会影响其他操作
+
+27.可以开发什么类型的应用程序
+1.数据量大，es分布式本质，可以帮助快速扩容，承载数据
+2.数据解雇灵活多变，随时可能变化，而且数据结构负责
+3.对数据的相关操作，较为简单，比如增删改查
+4.nosql,数据库，使用的也是类似上面额这种场景
 
 
 
+28.dcocument数据的路由原理
+1.document路由到shard上是什么意思
+  一个index会有多个shard，每一个doucment都会到一个shard上
+ 2.路由算法
+  shard =hash(rounting)%number_of_primarty_shard
+number_of_primarty_shard :shard的个数
+rounting:m默认代表id .可以搜东指定
 
+ 当获取一个id值，计算hash的值，相同的rounting值每次过来hash值都是一样
+ ，求余的值=shard数目-1.就是shard范围内
 
+ 3._id  or  custom rounting value
 
+  默认rounting是id
+  也可以在手动指定 index/type/id?rounting=userid
+  可以保证doucment一定路由到一个shard中，在后续应用级别上负载均衡
+  以便批量操作提高性能
 
+  4.primary shard 不可变谜底
 
+    疑问当第一个数据放到了衣蛾shard1中
+    在获取的时候，路由的shard就不正确了，导致数据丢失
 
+29.增删改原理
 
+   1.java客户端，发送请求
+   2，到结果node节点，此时就变成协调节点，
+   3.路由计算shard,协调节点路由到primary shard
+   4,同步到replica shard 
+   5,处理万后，协调节点响应客户端
 
 
 
