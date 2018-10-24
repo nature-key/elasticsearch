@@ -552,6 +552,113 @@ rounting:m默认代表id .可以搜东指定
    3.路由计算shard,协调节点路由到primary shard
    4,同步到replica shard 
    5,处理万后，协调节点响应客户端
+30一致性原理
+   
+ 1.consistency 
+    one :要求我们这个写操作，只有一个primary shard s是active活跃可用，就是可以执行
+    all :要求我们写操作，必须多有的shard都是活跃的
+    quorum:默认要求，所有的shard必须是大部分shard都是活跃才可用
+ 2.quroum机制
+   quroum = (primary+replica)/2+1 只有当replica>1的时候起作用
+ 3.如果节点数杀意quorum数量，可能导致quorum不齐全，导致不能写操作
+   当1 primary shard replica=3.quroum=(1+3)/2+1=3
+   只有2各节点，所以就不能进行写操作
+ 4timeout
+  如果不齐全，就默认等1mins,put index/type/id?timeout=30  
+
+
+ 31.document查询的原理 
+  1java应用请求一个节点，这个节点就是协调节点
+  2.协调节点路由之后就知道在哪个shard,
+  3,不在是仅仅在primary shard 上
+  4.采取随机的算法，4次查询有两次在primary
+    另外2此就在replica shard 上
+   5.特殊情况当index正在建立的时候，replica还没有的时候，由于到RO就会返回找不到
+     doucument 建立完成之后，就有了数据 
+32，bulk 奇特json
+   {"action":{"mete"}}
+   {"data"}
+   {"action":{"mete"}}
+   {"data"}
+
+   1.如果按照通俗易懂的格式
+   2.他显示转化成jsonArray对象，这个时候就会出现一份考本
+   3.解析json数组的对象，对每个document进行路由
+   4.请求到对应shard上
+   5.将个请求序列化
+   6.将序列化的请求发送到对应的节点上
+
+
+   这个回到导致内存增加，引起jvm垃回抽，影响性能
+
+
+   1. 不用转化成json对象，不会出现内存相同的数据考本，直接换行其人格
+   2.每两个一组，读取mete,进行document路由
+   3，直接将对应的json发送到node上
+
+   最大优势在于，不要讲json数组不解析成一个jsonArray，不消耗内存，节省消耗
+33.timeout解密
+   timeout机制，指定每个shard,就只能在这个时间范围内，将搜多的数据
+   范湖给client,而不是等待查出所有的数据，确保，一次收缩可以在用户指定范围内完成
+   ，提供良好的支持
+  get /_search?timeout=10ms   
+
+
+
+34,mult_index mult_type搜索模式
+
+  /_search 所有索引和所有type 的数据搜索
+  /index/_search
+  /index*/_search
+  /index1,index2/_sear
+  /index/type/_search
+  /index1.index2/type1/type2/_search
+  /_all/type1,type2/_search
+
+   请求会把回到所有的primaary shard ,因为，每一个primary shard
+   都会有数据，如果有replica shard ，请求也回到replica shard 中
+
+
+35.分页和deep paging
+
+ get /_search?from=0&size=10
+
+ deep paging 就是深度搜索
+  比如，单个主节点，每个节点都有2万数据，当搜索低10000的数据的10 条时候
+  。就是把三个shard de 数据到10010 条数，把三个节点数据排序
+  ，公3万30，然后在协调节点，获取其中需要的十条数据
+
+   性能影响，协调节点，要进行大量数据排序，所有这个过程，消耗网络
+   宽带，消耗内存，cpu,所以尽量较少deep  paging 搜索
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 
 
