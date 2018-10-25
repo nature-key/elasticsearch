@@ -674,7 +674,24 @@ rounting:m默认代表id .可以搜东指定
 
      当建立index的时候，建立倒排索引，搜不到建立normalization
      进行在此建立倒排索引，把同义词 相似此，进行转换
+41.分析器
+ 1.什么是分词器
+   切分词语  normalization(提升recall 召回率)
+   给一个句子，显示把句子进行分词，然后对每个单词进行normalization
+   时代转换，单辅助替换
 
+   chararcher filter :在一段文本分词之前，进行预处理，比如去除html标签
+   tokenizer 分词 hello you and me  ==  hello,you ,and ,me
+   token filter :同义词转换等等
+
+
+ 2，内置分词器
+
+
+    standard analyzer ：大小写 单词进行分析
+    simple analyaer  ：特殊字符分子_分词
+    whitespzce analyzer 不进行大小写转换
+    language analyzer 特定语言分词器
 
 
 
