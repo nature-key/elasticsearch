@@ -631,16 +631,49 @@ rounting:m默认代表id .可以搜东指定
    性能影响，协调节点，要进行大量数据排序，所有这个过程，消耗网络
    宽带，消耗内存，cpu,所以尽量较少deep  paging 搜索
 
+36 query string 基础语法
+  GET /INDEX/type/_search?q=file:test
+  get /index/type/_search?q=+file:test 查询file带 有test的document
+  get /index/type_search?q=-file:test  查询file不带test的document
+
+  2.all
+   get /index/type/_search?q=test
+
+   直接可以搜索所有的filed,任意一个filed包含的关键字都可一搜索踹，我们进行搜索并不是对每一个documnet
+   的没一个files都进行一次搜索，
+   在es的_all员数据，建立索引的时候，我们插入一条documment,他里面包含多个filed
+   ，此时会自动把多个filed的值，全部用字符串串联起来，变成一个字符串，同时建立索引
+
+   在后面如果自爱搜索的时候，没有对某个filed指定搜索，就默认默认搜索——all filed
+   其中包含了所有filed值 
+   
+37.mapping
+   get /index/type/1
+   {
+    "const"
+
+   }
+    在建立index的同时自动建立mapping
+    由于mapping的作用，设置了mapping，导致字段的行为不一样，搜索结果不一样
 
 
+39.精确匹配 ，全文搜索
 
+   1.精确匹配
+    exact value  搜索时候。必须输入2017-09-09才能搜搜出来
 
+    2.full text
+     缩写 vs    CHAIN CN
+     格式化  like likes likes
+     大小写  tom  TOM
+     同义词  like  love
 
+就不是简单的匹配一个值，而是可以对值进行拆分词语后进行匹配
 
+40  倒排索引
 
-
-
-
+     当建立index的时候，建立倒排索引，搜不到建立normalization
+     进行在此建立倒排索引，把同义词 相似此，进行转换
 
 
 
