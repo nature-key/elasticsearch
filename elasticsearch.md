@@ -693,18 +693,847 @@ rounting:m默认代表id .可以搜东指定
     whitespzce analyzer 不进行大小写转换
     language analyzer 特定语言分词器
 
+42.解密分词 string query
+
+  query string 必须建立相同的analyzer进行分词
+  query string 对exact value 和full text区别对待
+  date : exact value 
+  _all: full text
+
+ 比如document其中的filed包含value 是 hello  and  mes
+ 建立倒排索引。我们要搜索这个doument对应的index,搜索文本是hello me
+ 搜索文本就是 query string
+
+ 2.maping 
+   get  _search/?q=2017
+   get _search/?q=2017-01-01
+   使用的——all 全文检索
+
+    所有的字段汉字，进行分析，当使用query string进行搜索的时候
+    也进行分词，对应的 2017 01 01 在三个文档都有，所以就会搜索到3个
+
+  get /_search？q=date:2017-01-01
+   由于进行搜索的时候，date是exact value ,所以是精确匹配，没有找到
+   就只有一条会显示
+
+
+43.什么是mapping 
+  1.向es插入数据，建立index,同时建立mapping
+  2.建立mapping自动建立每个field的数据类型
+  3。不通的数据类型可能有extext filed 和 full  filed
+  4.当时exact value 建立倒排索引的时候，把整个关键字建立
+    full text 建立就是分析 normailzation （时代转换等等呢个）
+  5.同时，不通的类型，搜索行为就不一样
+  6.可以用es的dynamic mapping ,让其建立mappIng ,包括自动设置数据类型
+  也可以手动建立mapping,
+
+  每一个 index 的type都会有一个 mapping，建立对应数据类型
+
+
+44.mapping建立
+
+  PUT /website/_mapping/article
+{
+  "properties": {
+    "author_id":{
+            "type":"long"
+          },
+          "title":{
+            "type":"text",
+            "analyzer": "english"
+          },
+          "context":{
+            "type":"text"
+          },
+          "post_date":{
+            "type": "date"
+          },
+          "publish_id":{
+            "type": "text",
+            "index": "not_analyzed"
+          }
+    
+  }
+  
+}
+
+获取mapping
+  
+GET /website/_mapping/article
+
+
+
+测试分析
+  GET /website/_analyze
+{
+  "field": "new field",
+  "text": "my dog"
+}
 
 
 
 
+46。mapping复杂数据类型以及object类型数据底层结构大揭秘
+
+  对于object底层数据结构
+
+PUT /company/empploy/1
+{
+  "address":{
+     "country":"chain",
+     "provice":"shenzhen",
+     "city":"guodong"
+  },
+  "name":"wang",
+  "job":"java",
+  "phone":12345678900
+  
+  
+}
+GET /company/_mapping/empploy
+
+{
+  "company": {
+    "mappings": {
+      "empploy": {
+        "properties": {
+          "address": {
+            "properties": {
+              "city": {
+                "type": "text",
+                "fields": {
+                  "keyword": {
+                    "type": "keyword",
+                    "ignore_above": 256
+                  }
+                }
+              },
+              "country": {
+                "type": "text",
+                "fields": {
+                  "keyword": {
+                    "type": "keyword",
+                    "ignore_above": 256
+                  }
+                }
+              },
+              "provice": {
+                "type": "text",
+                "fields": {
+                  "keyword": {
+                    "type": "keyword",
+                    "ignore_above": 256
+                  }
+                }
+              }
+            }
+          },
+          "job": {
+            "type": "text",
+            "fields": {
+              "keyword": {
+                "type": "keyword",
+                "ignore_above": 256
+              }
+            }
+          },
+          "name": {
+            "type": "text",
+            "fields": {
+              "keyword": {
+                "type": "keyword",
+                "ignore_above": 256
+              }
+            }
+          },
+          "phone": {
+            "type": "long"
+          }
+        }
+      }
+    }
+  }
+}
+底层数据结构
+  address.country [chain]
+  adress.provice [shenzhen]
+  adress.city [guodong]
+  name  [wang]
+
+47.search api 基本语法
+
+   Query DSL搜索语法
+    GET /website/test/_search
+{
+  "query": {
+    "bool": {
+      "must": [
+        { 
+          "match": {
+           "name":"elasticsearch"
+          }
+        }
+      ],
+      "should": [
+        {
+           "match": {
+              "content":"dog"
+           }
+          
+        }
+      ],
+      "must_not": [
+        { 
+           "match": {
+             "id": 100
+           }          
+        }
+      ]
+    }
+  }
+  
+  
+}
+
+
+GET /company/employee/_search
+{
+  "query": {
+    "bool": {
+       "must": [
+         {
+           "match": {
+             "date": "2019"
+           }
+         }
+       ],
+       "filter": {
+         "range": {
+           "age": {
+             "gte": 20,
+             "lte": 200
+           }
+         }
+       }
+      
+    }
+    
+  }
+  
+}
+
+filter :仅仅按照搜索条件过滤需要的数据而已，不计算相关度分数
+query:回去计算document相对于搜索条件的相关度，并按照相关度排序
+
+要是想返回相似度高的先返回就是用query,仅仅是进行数据过滤使用fileter
+
+3.性能
+ filter 不需要计算相关度分数，不需要按照相关度分数进行排序，同时内置自动
+ cache结果。性能高
+ query：要计算相关度分数计算，按照分数进行排序，为无法cache结果
+
+50.各种功能query实战
+
+GET /company/employee/_search
+{
+  "query": {
+    "term": {
+      "name": "wang san"
+    }
+  }
+  
+}
 
 
 
 
+GET /company/employee/_search
+{
+  "query":{
+     "range": {
+       "age": {
+         "gte": 10,
+         "lte": 20
+       }
+     }
+    
+  }
+  
+}
 
 
 
 
+GET /company/employee/_search
+{
+  "query":{
+      "multi_match": {
+        "query": "wang",
+        "fields": ["name","city"]
+      }
+    
+  }
+}
+
+
+ term 精确匹配，不进行分词
+
+
+51.组合过滤
+ 单独还是用filetr
+  GET /company/employee/_search
+{
+  "query": {
+    "constant_score": {
+      "filter": {
+         "range": {
+           "age": {
+             "gte": 10,
+             "lte": 20
+           }
+         }
+      },
+      "boost": 1.2
+    }
+  }
+  
+}
+
+分数计算是在bool下分别计算分数，组合后在进行计算得出
+
+检验合法性
+GET /test_index/test_type/_validate/query?explain
+{
+  "query":{
+    "match": {
+      "content": "TEXT"
+    }
+  }
+}
+
+排序
+GET /company/employee/_search
+{
+  "query": {
+    "match": {
+      "name": "wang"
+    }
+  }
+  , "sort": [
+    {
+      "age": {
+        "order": "asc"
+      }
+    }
+  ]
+}
+建立mapping
+PUT /website
+{
+  "mappings": {
+     "article":{
+       "properties": {
+         "title":{
+           "type": "text",
+           "fields": {
+             "raws":{
+               "type": "string",
+               "index": "not_analyzed" 
+             }
+           },
+           "fielddata": true
+         },
+         "content":{
+           "type": "text"
+         },
+         "post_date":{
+           "type": "date"
+         },
+         "author_id":{
+           "type": "long"
+         }
+         
+       }
+     }
+  }
+}
+
+title一分词，第二排序。用来titl分词排序，不准确
+
+
+55.分数的计算
+书案发介绍
+ 1.term frequency 
+   搜索文本出现的filed次数越多，相关度就越高
+   hello word 
+   doc1 :hello you. and word 高
+   doc2:  hello you  
+ 2.inverse document frequency
+  搜索文本的各个词条出现在所有的出现的次数越多，相关度，不高
+  hello word
+  doc1:hello you today is good  
+  doc2: how are you ,world      高
+  hello字所有的发文档初心了10000此。wordle出现了100，
+3.field length norm filed长度 ，越长，相关度就地
+
+   hello word
+   doc1  {"title":"hello you "}
+   doc2 {"title:"you","content"："ddddd  dddddd  word"}
+  所以 doc1相关度 高，英文title 长度地
+查看分数的计算
+GET /website/article/_search?explain
+{
+  "query":{
+    "match": {
+      "content": "elasticsearch"
+    }
+  }
+}
+
+
+56。doc value
+ 搜索的时候，要依靠倒排索引，排序的时候，正派索引，
+ 看到诶个document 的每个filed，然后进行排序就是正排索引，doc value
+
+ doc values 是被保存在磁盘上的，此时如果内存足够，os.会自动将缓存在内存中
+ 性能很好，如果内存不足够，os会将其写入磁盘上
+
+
+57.query prase
+ 1.一个请求到所有的shad
+ 2.每一个shard返回 from +size的proority queue,
+ 3。返回给coordinate，然后进行merge,全局排序后，放到自己的自己的queue
+ 4.此时queue,就可以将自己的priority queue中的数据，取出获取第一页数据
+ 5，priority queue
+ 这个和deep paging问题一样
+
+
+replica shard提高性能， 多个 replica shard 减轻 primary shard 的压力，正价qbs 
+
+
+58.fetch phase
+
+  queryphase结束，获取到的是id, 此时九华发送
+  mget api 。去各个shard获取想要的数据
+  。每个shard 返回数据到coorfnate node
+  ，最后返回给client
+
+ 默认 size =10
+
+59.bounding result
+ 1.preference
+  决定哪些shard会被来执行搜索操作
+   ——primary _primary_first _local
+
+
+   问题：两个document 排序。field值相同
+   不通的shard 可能拍讯就是不通，每次伦旭达到不通的replica shard 
+   每次页面的上看到的数据结果可能都不一样
+   ，这就是 bouncing result 跳跃结果
+   解决：将preference设置一个字符串
+   比如user_id,让每个user每次搜索的时候，都使用同一个
+   replica shard,就不会看到跳跃 
+
+2.timeout获取指定时间数据得到返回
+3.rounting ,路由到同一个 shard
+
+4.search_type
+ 默认 query_then_fetch
+ dfs_query_then_fetch提高revlance sort 精准度
+
+
+60.scroll
+ 用来检索数据，让系统进行处理大量数据
+  比如一次性查出来10万数据，性能很差
+  此时会采取scoll滚动查询，一次一次的查
+  知道数据查询完成
+  scoll每次查询就会保存一个试图快照，之后
+  基于就得试图快照数据收缩，如果这个期间数据更新，shi
+  是不会用户看到，基于-doc排序方式，性能较高
+  每次发送scroll 请求，指定一个时间窗口，
+  每次搜索请求在这个时间窗口完成就可以
+
+
+
+
+GET _search?scroll=1m
+{
+  "query": {
+    "match_all": {}
+  },
+  "sort": [
+    
+      "_doc"
+    
+  ],
+  "size":10
+}
+
+61.索引
+  1.创建索引
+  PUT /my_index
+{
+  "settings": {
+    "number_of_shards": 1,
+    "number_of_replicas": 0
+  },
+  "mappings": {
+    "my_type":{
+      "properties": {
+        "my_field":{
+          "type":"text"
+        }
+      }
+    }
+    
+  }
+}
+2.修改索引
+PUT /my_index/_settings
+{
+  "number_of_replicas": 1
+  
+}
+3.删除搜因
+DELETE /my_index
+DELETE /my_index1,my_index2
+DELETE /my_*
+DELETE /_all
+
+elasticsearh.yml
+action.destructive_requires_name:true// 不能使用 /_all
+
+62 自定义分词器
+PUT /my_index
+{
+  "settings": {
+    "analysis": {
+      "char_filter": {
+        "&_to_and":{
+          "type":"mapping",
+          "mappings":["&=>and"]
+        }
+      },
+      "filter": {
+        "my_stopword":{
+          "type":"stop",
+           "stopwords":["the","a"]
+        }
+      }
+      , "analyzer": {
+        "my_analyzer":{
+          "type":"custom",
+          "char_filter":["html_strip","&_to_and"],
+          "tokenizer":"standard",
+          "filter":["lowercase","my_stopword"]
+        }
+      }
+    }
+  }
+}
+
+GET /my_index/_analyze
+{
+  "text": "i&me is a DOG"
+  , "analyzer": "my_analyzer"
+}
+
+
+
+定义type 的字段的分词器
+PUT /my_index/_mapping/my_type
+{
+  "properties": {
+    "title":{
+      "type":"string",
+      "analyzer": "my_analyzer"
+    }
+  }
+}
+
+63.索引管理 type底层数据结构
+   type底层结构，是 相同的字段都是保存一份，不同子弹为空
+   最佳实践。类似结构的type放到一个index下，这个type应该
+   有多个filed是相同的，假如。你将两个type的field完全不同
+   放到一个index下，那么就没一条数据会至少一版底层lucene是空值
+   严重的性能问题，
+
+
+64 root object
+ 就是mapping对应的mapping json
+  包括 properties all source metadata
+
+ put /my_index
+ {
+  "mapping":{
+    “my_type":{
+      "properties":{
+
+      }
+    }
+}
+ } 
+
+  2.properties
+  type index analyzer
+   put /my-index/_mapping/my_type
+   {
+         "properties":{
+          "title":{
+            "type":"text"
+          }
+         }
+   }
+  3._source
+   1.查询的时候，直接可以拿到完整的的document .不需要先拿document idz
+   在发一次请求
+   2.partial update 基于_souce
+   3.reindex .直接基于——souce,不需要冲数据库，查询数据在司改
+   4.可以基于_source订制返回——source
+   5.debug query 更容易。可以卡到——source
+
+   4._all
+      建立索引的时候，将所有的field的值平成一个字符串，在没有指定
+      field进行搜索的时候，就是使用——all field
+      put /my_index/_mapping/my_tpe
+      {
+        "_all":{"enabled":false}
+      }
+    也可以在field上设置是否包含field的值在all field
+    put /idnex/_mapping/type
+    {
+      "properties":{
+        "my_field":{
+          "type":"text",
+          "include_in_all":false
+        }
+      }
+    }
+
+65.自定义 mapping
+   订制dynamic策略
+   true遇到陌生字段，进行 dynamic mapping
+   false 遇到陌生字段 就忽略
+   strict 遇到陌生字段 就报错
+put /index
+{
+  "mapping":{
+   "type":{
+     "dynamic":"strict"
+     "title":{
+     "type":"text" 
+       },
+       "adress":{
+       "tyep":"text",
+       "synamic":true
+ }
+}
+}
+  date_detection ：自动区别字段的类型，如果是日期格式，就映射成
+  date。在此插入不是date格式报错
+ put inde/-mapping/type
+ {
+  "date-detection":false
+ }
+
+2.订制自己的dynamic mapping temloate(tyep level)
+  put /index/
+  {
+    "mapping":{
+     "type":{
+        "dynamic_temlates":[
+          {
+          “en”:{
+            "match":"*_en"
+             match_mapping_type:"string",
+             "mapping":{
+              "type":"string",
+              "analyzer":"english"(会把停用词去掉)
+           }
+        }
+
+        ]
+   }
+  }
+  }
+title没有匹配到dymic就是用standard 不会过滤停用词
+
+
+
+3.订制自动机的 default mapping template(index level)
+
+put /index
+{
+   “mappings”:{
+
+     "-default":{
+       "_all":{"enable":false}
+     }.
+     "blog":{
+        _all：{enable:true}
+     }
+ }
+}
+可以在自己对应的type可以打开
+
+66.在不停机的情况重建reindex
+     一个filed的设置是不能被修改的。。如果要修改一个field,就要会从新建立
+     index,使用别名，然后bluk api 查出来，在写入新的index中
+     批量查询的建议使用 scroll api  。并采用多线程的来reindex数据
+     1.开始建立dynamic mapping 插入数据前几条数据都是日期
+     单是后面的是字符串，就会报错
+     2.这时候就要重建索引
+     3.先要建立index的别名
+       
+      PUT /my_index/_alias/good_index
+     4.新建index
+     PUT /my_index_new
+{
+  "mappings": {
+     "my_type":{
+       "properties": {
+         "title":{
+           "type": "text"
+         }
+       }
+     }
+     
+  }
+   5.查询数据
+   GET /my_index/_search?scroll=1m
+{
+  "query": {
+    "match_all": {}
+  },
+  "sort": [
+    "_doc"
+  ],
+  "size": 1
+}
+6导入数据
+PUT /_bulk
+{"index":{"_index":"my_index_new","_type":"my_type","_id":"2"}}
+{"title":"2018-09-09"}
+
+  7.重复执行
+   8.删除旧的index
+    POST /_aliases
+{
+  "actions": [
+    {"remove": {"index": "my_index","alias": "good_index"}}, 
+     { "add": {"index": "my_index_new","alias": "good_index"}}
+    
+  ]
+}   
+9.切换别名
+POST /_aliases
+{
+  "actions": [
+    {"remove": {"index": "my_index","alias": "good_index"}}, 
+     { "add": {"index": "my_index_new","alias": "good_index"}}
+    
+  ]
+}
+
+67.索引不可变原因
+  倒排索引结构
+   1.包含这个关键词的 documnet list
+   2. 包含关键词的所有的document 数量 IDF
+   3,关键词在这个document中的次序 TF
+   4，关键词在每个document中的次数
+   5，每个doucment的长度
+   6，关键此在所有的documen的平均长度
+
+1.不需要锁。提高并发能力避免锁的问题i
+2，数据不变，一直保存在os  cache 中
+3，filter cache 一直驻留内存
+4.可以压缩节省cpu 和io开销
+
+每次都要重新构建整个索引
+
+
+68.document写入原理
+ 1.一个doc先被写入内存 buffer中
+ 2.写到一定程度，就会commit
+ 3.先提交到 os  cache
+ 4.然后 fsync强制刷新cache到硬盘 disk ，index segment就会被打开公search使用
+ 5.同时清空 buffer
+
+ es底层用的是lucene,lucene底层的index是分为多个segment
+ 每个segment都会存放到部分数据
+
+  document 删除的时候就会生成一个.del文件，里面记录了那个index
+  的那个document被删除了。下次搜索的时候，就会看到已经被删除
+  就会过滤不被搜索
+
+document 被更新的时候，也会记录在。del中，在搜索时的时候，会得到多个版本，你的
+的数据，只会获取没有标记的数据，最新的版本
+69.优化写入流程
+   现有的的流程是，必须等待fsync将segment刷新磁盘，才将
+   segment打开公search使用，这样的话，从一个documetn写入
+   他可以搜索，可能超过分钟，就不是近视是了
+
+   修改流程
+    1.数据写入buffer
+    2.每隔一段时间buffer数据写入segment文件，d但是写入os cache
+    3.只要segment写入os  cache ,那就直接打开search使用立刻执行commit
+
+    数据写入os cache并打开搜索过程，叫做refresh,默认
+    每隔一秒refresh一次，也就是说每个一秒就把bufer的数据写入的
+    index segment的数据先写入到cache中
+
+    可以手动执行
+    post /my_index/_refresh 
+    可以修改时间
+    put  /my_index
+    {
+      "setting":
+      {
+        "refresh_interval":"30s"
+      }
+    }
+
+70.最终的document写入优化
+1.数据写入buffer,每个一秒就会把数据写到os cache ,同时打开index segment，同时清空 buffer, 有一个translog记录document
+2.下一此也是一样增加index segment ，继续添加到translog中
+3.当translog导到一定程度，就会触发 flush,把buffer的数据写入到os cache中同时清空 buffer,
+4.此时会在磁盘写入一个 commit point 记录所有的index segment
+5.触发fasync把os cache的数据清醒写入os disk 
+6.同时清空tanslog日志
+
+数据恢复
+ 1.当宕机的时候，
+ 2.os  cache 数据将全部丢失，
+ 3.而 os disk 中记录上衣commit point 的数据
+ 4.translog记录了上一次到现在的数据
+ 5.机器重启的时候，disk的数据没有丢失，此时将tanslog文件
+ 变更记录进行回收，重新执行之前的各种操作。在bufer执行
+ 重新刷新dengment 到 os  cache,等待下一次从commit发生即可
+
+fsync 清空translog就是flus
+默认30分值给你flush一次，或者当tansLog过大时候也会flush
+post /index/-flush 
+
+translog 每个5秒回fsync到磁盘上，在一次增删改查后
+当faync在primaary shard和replica shard成功之后
+镇删改查才会成功
+但是这种一次增删改查，强行 fsync translog 可能就会导致
+比较耗时，也可以允许部分数据丢失，这是异步
+put /index/_setting
+{
+  "index.translog.durability":"async"
+  "index.tanslog.aync_interval":"5s"
+
+}
+
+71.sengment merge
+ 1.选择一些相同的segment,merge成一个segment
+ 2。将新的segment flush 到磁盘上
+ 3.写一个新的commit point 包括segment并且删除旧的segment
+ 4,将新的segment打开搜索
+ 5.删除旧的segment
+ 可以手动执行
+ post /index/_optimize?max-num_segments=1
 
 
 
