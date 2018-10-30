@@ -1536,6 +1536,212 @@ put /index/_setting
  post /index/_optimize?max-num_segments=1
 
 
+ 1.term filter实战
+
+  1.字符串默认创建mapping是两个字段
+    一个是进行分析用的 type:string
+    另一个是不进行分词 的 keyword 保留256个字符最多，直接一个字符串放入倒排索引中
+  2.  term filter 天然支持 boolean  s数字  日志
+  3.text 不进行分词 no_analyzed才能进行使用
+
+ GET /forum/article/_search
+{
+  "query":{
+    "constant_score": {
+      "filter": {
+        "term": {
+            "articleID" : "QQPX-R-3956-#aD8"
+        } 
+      }
+    }
+  }
+  
+}
+2.filter执行原理深度解析
+    1.在倒排索引中搜索，获取cocument list
+      word   doc1 doc2  doc3
+      hello   *   * 
+      word        *
+      str= "word hello"
+      找到 doc2
+    2.把搜索的结果进行构建bigset
+      把filter找到的结构，构建一个bigset ,一个二进值，【1，0，1，0，0】
+      匹配就是1，不匹就是0
+    3.遍历所有的filter的bigset,获取都满足的bigset,返回给客户端，先把稀疏的进行遍历，尽可能多的过滤数据
+    
+    4，把匹配额数据进行缓存，caching,把近256个query超过一定数量的条件进行缓存，晓得segment不畸形缓存
+     query比filter的好处就是进行caching,性能提高
+    5.filter的执行是在query,先尽量过滤大量数据
+    filter:简单数据过滤，不进行相关度计算 
+    query:，进行相关度计算 还score进行排序
+    6.caching自动更新 缓存
+    7.以后相同的filter就会在caching进行搜索 
+
+3多个filter组合
+GET /forum/article/_search
+{
+  "query": {
+    "constant_score": {
+      "filter": {
+         "bool": {
+           "should":[
+               {
+                 "term":{"articleID": "XHDK-A-1293-#fJ3"}
+               },
+               {
+                 "bool":{
+                   "must":[{
+                     "term":{"postDate":"2017-01-01"}
+                     
+                   },
+                   {
+                     "term":{"articleID":"JODL-X-1937-#pV7"}
+                   }
+                   ]
+                 }
+               }
+             
+             ]
+         }
+        
+      }
+    }
+    
+  }
+  
+}
+5.terms  相当于in
+GET /forum/article/_search
+{
+  "query": {
+    "constant_score": {
+      "filter": {
+        "terms": {
+          "tag": [
+            "java",
+            "VALUE2"
+          ]
+        }
+      }
+    }
+  }
+  
+  
+}
+
+6 范围查找
+GET /forum/article/_search
+{
+  "query": {
+    "constant_score": {
+      "filter": {
+        "range": {
+          "view_cnt": {
+            "gte": 10,
+            "lte": 240
+          }
+        }
+      }
+    }
+    
+  }
+  
+}
+
+7.控制全文检索
+
+ GET /forum/article/_search
+{
+  "query": {
+    "match": {
+      "title": "java elasticsearch"
+    }
+  }
+  
+}
+GET /forum/article/_search
+{
+  "query": {
+    "match": {
+      "title":{
+        "query": "java elasticsearch"
+        , "operator": "and"
+      }
+    }
+  }
+  
+  
+}
+
+GET /forum/article/_search
+{
+  "query": {
+    "match": {
+      "title": {
+        "query": "java elasticsearch spark hadoop",
+         "minimum_should_match": "75%"
+      }
+    }
+    
+  }
+  
+  
+}
+bool多个组合搜索的分组
+must和should搜索对应的分数，加起来，除以must和should的总数
+
+排名第一：java，同时包含should中所有的关键字，hadoop，elasticsearch
+排名第二：java，同时包含should中的elasticsearch
+排名第三：java，不包含should中的任何关键字
+
+should是可以影响相关度分数的
+
+must是确保说，谁必须有这个关键字，同时会根据这个must的条件去计算出document对这个搜索条件的relevance score
+在满足must的基础之上，should中的条件，不匹配也可以，但是如果匹配的更多，那么document的relevance score就会更高
+
+
+GET /forum/article/_search
+{
+  "query": {
+    "bool": {
+      "must":     { "match": { "title": "java" }},
+      "must_not": { "match": { "title": "spark"  }},
+      "should": [
+                  { "match": { "title": "hadoop" }},
+                  { "match": { "title": "elasticsearch"   }}
+      ]
+    }
+  }
+}
+
+默认情况下，should是可以不匹配任何一个的，比如上面的搜索中，this is java blog，就不匹配任何一个should条件
+但是有个例外的情况，如果没有must的话，那么should中必须至少匹配一个才可以
+比如下面的搜索，should中有4个条件，默认情况下，只要满足其中一个条件，就可以匹配作为结果返回
+
+但是可以精准控制，should的4个条件中，至少匹配几个才能作为结果返回GET /forum/article/_search
+{
+  "query": {
+    "bool": {
+      "should": [
+        { "match": { "title": "java" }},
+        { "match": { "title": "elasticsearch"   }},
+        { "match": { "title": "hadoop"   }},
+  { "match": { "title": "spark"   }}
+      ],
+      "minimum_should_match": 3 
+    }
+  }
+}
+
+
+全文检索多个值搜索，两种做法 match query 或 bool should
+控制精准度 and operator  ,minimum_should_match
+
+
+
+
+
+
 
 
 
