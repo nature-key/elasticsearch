@@ -1739,6 +1739,388 @@ GET /forum/article/_search
 
 
 
+8.match 底层实现
+
+ ”match“:{
+    "title":" java elasearch"
+}
+
+"bool":{
+    "should":[
+     { "term":{"title":"java"} }
+     {"term":{"tltle"：”elaserasetch“}}
+    ] 
+}
+
+match 底层使用  bool  term 
+
+9.权重 boost
+
+权重大分，分数高，优先返回
+GET /forum/article/_search 
+{
+  "query": {
+    "bool": {
+      "must": [
+        {
+          "match": {
+            "title": "blog"
+          }
+        }
+      ],
+      "should": [
+        {
+          "match": {
+            "title": {
+              "query": "java",
+              "boost": 2
+            }
+          }
+        },
+        {
+          "match": {
+            "title": {
+              "query": "hadoop"
+            }
+          }
+        },
+        {
+          "match": {
+            "title": {
+              "query": "elasticsearch"
+            }
+          }
+        },
+        {
+          "match": {
+            "title": {
+              "query": "spark"
+              
+            }
+          }
+        }
+      ]
+    }
+  }
+}
+
+10多shard搜索结果不准确
+  当有多个shard的时候，其中的一个shard包含了许多关键词，根据idf算法，相关分数反而di,而另一个shard的document的关键词出现的少，这样，相关度就会高，最后搜索的结果可能就不太准确。
+   
+   解决
+     1.生产环境下，数据量大，尽可能均匀分配
+     2.测试环境将primary shard设置一个
+     3.测试和环境搜索带search-type=dfs_query_rhen-fetch参数，会将local IDF计算书来 global IDF
+     计算一个doc相关分数的时候后，将所有的shrad 的 local IDF计算一下，获取出来，在本地进行globa IDF分数计算，将所有的shard的doc作为上下文尽心搜索，生产环境不推荐，性能很差
+
+11.多字段查询 dis_max
+
+GET forum/article/_search
+{
+  "query": {
+    "bool": {
+      "should": [
+        {
+          "match": {
+            "title": "java solution"
+          }
+        }
+        ,
+        {
+                    "match": {
+            "content": "java solution"
+          }
+        }
+      ]
+    }
+  }
+}
+
+
+分数计算
+  每个query分数之和 。乘以query匹配数  除以 query数目（2）
+
+
+要精准分会使用 dis_max
+尽可能一个字段匹配分数高的，而不是，每个字段都匹配的分数
+ 计算每个 match query 分数的坐高值，获取分数高的返回
+GET forum/article/_search
+{
+  "query": {
+    "dis_max": {
+     
+      "queries": [
+         {
+           "match": {
+             "title": "java solution"
+           }
+         },
+         {
+           "match": {
+             "content": "java solution"
+           }
+         }
+        ]
+    }
+  }
+}
+
+bis_max只会把query中最高分数拿出来
+tie_breaker （值是0-1）就是把其他 query的分数，乘以tie_breaker,然后综合和最高分数一起计算，获取最高分数
+
+还会考虑其他query分数
+
+13.multi_match
+可以吧bis_max简单些成muti_match
+GET forum/article/_search
+{
+  "query": {
+    "multi_match": {
+      "query": "java solution",
+      "fields": ["title^2","content"],
+      "tie_breaker": 0.3,
+      "minimum_should_match":"50%"
+    }
+    
+  }
+}
+
+
+get/forum/article/_search
+{
+  "query":{
+   "dis_max":{
+   "queries":[
+
+     {
+      "match":{
+      "title":{
+       "query":"java bengin",
+       "mimimum_should_match":"50%"
+       "boost":2
+    }
+    }
+
+     }
+   ],
+   "tie_breaker":0.9
+ }
+}
+}
+
+
+14.most_filed
+
+  best-field :尽可能的多个field匹配尽可能多的关键词，同时分数相同的情况下，在一定程度上考虑其他字段，简单来说，
+  你对多个field进行搜索，想搜索的某一个field尽可能所得匹配更所关键字
+   优点：通过匹配best field策略 ，以及综合考虑其他field还有mimimum——should——match 支持，尽可能多的精确匹配结果到前面
+  缺点：除了精确匹配结构，其他结果差不多，排除结果不均匀，没有区分度
+  most-fields:z主要是尽可能多个field匹配到某个关键词的doc,优先返回来
+   优点：尽可能匹配多尔衮field结果排到前面，排序均匀
+   缺点：可能精确匹配的结果，无法到最前面，
+
+GET forum/article/_search
+{
+  "query": {
+    "match": {
+      "sub_title": "learning courses"
+    }
+  }
+  
+}
+
+GET forum/article/_search
+{
+  "query": {
+    "multi_match": {
+      "query": "learning courses",
+      "fields": ["sub_title","sub_title.std"],
+      "type": "most_fields"
+    }
+  }
+}
+
+
+
+如果字段的分词器是  english
+ 他会把 单词转换成原型，匹配更多的数据
+ learning -learn
+ couses-couse
+不能够精确匹配 ，所以我们使用定义分词器
+analyzer
+ POST /forum/_mapping/article
+{
+  "properties": {
+      "sub_title": { 
+          "type":     "string",
+          "analyzer": "english",
+          "fields": {
+              "std":   { 
+                  "type":     "string",
+                  "analyzer": "standard"
+              }
+          }
+      }
+  }
+}
+
+
+然后尽可能多分匹配多个字段 如fields": ["sub_title","sub_title.std"],
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 
 
