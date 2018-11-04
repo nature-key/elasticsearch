@@ -1969,155 +1969,1467 @@ analyzer
 
 
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
+15.most_field 的进行cross-field唯一标识
+
+GET forum/article/_search
+{
+  "query": {
+    "multi_match": {
+      "query": "Peter Smith",
+      "fields": ["author_first_name", "author_last_name"],
+      "type": "most_fields"
+    }
+  }
+  
+}
+当唯一标识 分配在多个字段
+结果并不是我们想的，原因可能是IDF doc1中first_name 出现的频率第，导致分数高，而他排到了前面
+
+
+ 问题。只能多的filed匹配，不能匹配单个field完全匹配
+  most-field 没有办法匹配特别少的结构
+  IF IDF不准确
+
+ minimum_should_match
+
+　　主要是用来去长尾，long tail长尾，比如你搜索5个关键词，但是很多结果是只匹配1个关键词的，其实跟你想要的结果相差甚远，这些结果就是长尾
+minimum_should_match，控制搜索结果的精准度，只有匹配一定数量的关键词的数据，才能返回
+
+
+16.copy-to
+  解决cross-field的问题
+    问题1：只是找到尽可能多的field匹配的doc，而不是某个field完全匹配的doc --> 解决，最匹配的document被最先返回
+
+问题2：most_fields，没办法用minimum_should_match去掉长尾数据，就是匹配的特别少的结果 --> 解决，可以使用minimum_should_match去掉长尾数据
+
+问题3：TF/IDF算法，比如Peter Smith和Smith Williams，搜索Peter Smith的时候，由于first_name中很少有Smith的，所以query在所有document中的频率很低，得到的分数很高，可能Smith Williams反而会排在Peter Smith前面 --> 解决，Smith和Peter在一个field了，所以在所有document中出现的次数是均匀的，不会有极端的偏差
+
+  使用copy-to 把多个字段放到一个字段中
+
+   建立映射
+   PUT /forum/_mapping/article
+{
+  "properties": {
+      "new_author_first_name": {
+          "type":     "string",
+          "copy_to":  "new_author_full_name" 
+      },
+      "new_author_last_name": {
+          "type":     "string",
+          "copy_to":  "new_author_full_name" 
+      },
+      "new_author_full_name": {
+          "type":     "string"
+      }
+  }
+}
+
+ GET /forum/article/_search
+{
+  "query": {
+    "match": {
+      "new_author_full_name":       "Peter Smith"
+    }
+  }
+}
+ 
+ 17.cross-field
+ GET forum/article/_search
+{
+  "query": {
+    "multi_match": {
+      "query": "Peter Smith",
+      "fields": ["author_first_name","author_last_name"],
+      "operator":"and",
+      "type": "cross_fields"
+    }
+  }
+}
+  如何解决 问题1：尽可能多的匹配多个field ,而不是单个field  所以使用 
+   每一个 term 都在字段中出现
+
+ 2.不能去长尾   
+ 3.IDF/TF  不准确
+   这样可以是每一个term计算出来的IDF,去最小值，不会导致极端星狂
+    perter  smias
+
+   以为你 first name 出现频率低，IDF的分数就很高，而last name出现频率高，IDF分数正常，不会产生极端情况
+
+
+18.phrase matching 
+
+  近似搜索
+  java spatk不含有任何字符
+  java spatk 两个单词老的越近分数越高，排名靠前
+  1.phrase match  短语匹配  proximity match 近似匹配
+  GET forum/article/_search
+{
+  "query": {
+    "match_phrase": {
+      "content": "elasticsearch article"
+    }
+  }
+}
+
+只包java spark的doc返回
+
+
+term position 
+
+hello world java spark doc1
+hi spark java  doc2
+
+hello doc1(0)
+wrrld doc1(1)
+java doc1(2)doc2(2)
+spark doc2(1)
+
+后面的数字就是position
+
+get _analyze
+{
+  "text":"hello world"
+   "analyzer":"srandard"
+}
+
+
+ parase match 原理
+  满足下面条件
+1.根据 每一个term 去匹配doc,肚子啊doc中后，
+2.在去计算postion java 的值要小于spark 1
+  所以就找到了 doc1
+
+19.slop
+ GET /forum/article/_search
+{
+  "query": {
+    "match_phrase": {
+      "content": {
+        "query": "java best",
+        "slop":4
+      }
+    }
+  }
+}
+slop 就是移动query term 多少次就可以匹配到
+
+ this is       dog       and         pig
+ is   pig
+
+      is/big
+       is      big
+       is                 big    
+       is                               pig
+
+至少移动4此就可以匹配到is big
+match_parse 就是短语匹配
+proximity parse  近似匹配
+
+
+20 ,平衡精准度和召回率
+这样既可以提高精准度，也可以提高召回率
+GET forum/article/_search
+{
+  "query": {
+   "bool": {
+     "must": [
+       {
+          "match": {
+      "content": "java  sprak"
+    }
+       }
+     ],
+     "should": [
+       { 
+         "match_phrase": {
+            "content": {
+               "query": "java  sprak",
+               "slop":222
+            }
+         }
+       }
+     ]
+   }
+  } 
+}
+
+21.性能优化
+GET forum/article/_search
+{
+  "query": {
+     "match": {
+       "content": "java spark"
+     }
+  },
+  "rescore":{
+    "window_size":50,
+    "query":{
+      "rescore_query":{
+        "match_phrase":{
+          "content":{
+            "query":"java spark",
+            "slop":50
+          }
+        }
+      }
+    }
+  }
+  
+}
+ 由于 match 可能匹配除了200条数数据，但是分页只展示50条，我们就可以进行对前50条进行匹配
+window_size  :只在前50条进行近似匹配，
+
+22.
+GET my_index/my_type/_search
+{
+  "query": {
+    "regexp":{
+      "title":{
+        "value":"c.+"
+      }
+    }
+  }
+}
+
+GET my_index/my_type/_search
+{
+  "query": {
+    "wildcard": {
+      "title": {
+        "value": "c?*d*"
+      }
+    }
+  }
+}
+
+
+
+GET my_index/my_type/_search
+{
+  "query": {
+    "prefix": {
+      "title": {
+        "value": "c3"
+      }
+    }
+  }
+}
+
+
+1.前准匹配
+  性能差，他会匹配所有的doc
+2.通配符
+3.正则表达式
+性能都差，不建议使用  
+
+23.匹配前准 在搜索的时候匹配 search-time
+  hello w 
+  GET /my_index/my_type/_search
+{
+  "query": {
+    "match_phrase_prefix": {
+      "title": {
+        "query": "hello w",
+        "slop":4,
+        "max_expansions": 2
+      }
+    }
+  }
+}
+
+1.match hello 的所有 doc
+2。匹配 w开头的倒排索引
+3.slop 在指定移动范围内获取含有  hello w  的doc
+4.max_expansions 匹配到指定的数量的前准就不在匹配
+
+
+24.ngram 实现 index-time
+ngram 是什么
+ hello  w
+
+ ngram  legth=1  h e l l o w
+ ngram   2    he el ll l0 ow
+
+ngram 3   hel ell ll0
+
+
+edge ngram 
+
+h
+he
+hel
+hell
+hello  doc1
+
+w  doc1
+wo
+wor
+worl
+world
+
+hello w
+ 获取doc1 ,position 也匹配 ，返回 doc1  返回 helloworld
+
+ 搜索的时候，不用根据一个前准，然后扫描整个倒排索引 ，简单匹配helo w 
+ 和match 一样就不用去全文检索，所有所有的倒排索引，直接在建立index建立好就行
+
+设置edge_ngramedge_ngram
+PUT /my_index
+{
+    "settings": {
+        "analysis": {
+            "filter": {
+                "autocomplete_filter": { 
+                    "type":     "edge_ngram",
+                    "min_gram": 1,
+                    "max_gram": 20
+                }
+            },
+            "analyzer": {
+                "autocomplete": {
+                    "type":      "custom",
+                    "tokenizer": "standard",
+                    "filter": [
+                        "lowercase",
+                        "autocomplete_filter" 
+                    ]
+                }
+            }
+        }
+    }
+}
+指定 字符安mapping
+PUT /my_index/_mapping/my_type
+{
+  "properties": {
+      "title": {
+          "type":     "string",
+          "analyzer": "autocomplete",
+          "search_analyzer": "standard"
+      }
+  }
+}
+匹配
+
+GET my_index/my_type/_search
+{
+  "query": {
+    "match_phrase": {
+      "title": "hello we"
+    }
+  }
+}
+如果用match，只有hello的也会出来，全文检索，只是分数比较低
+推荐使用match_phrase，要求每个term都有，而且position刚好靠着1位，符合我们的期望的
+
+25.TF IDF  空间向量
+
+ 1.bool model
+  过滤出doc不去计算分数
+  bool  must must bot should
+
+  2.TF/IDF
+    TF:单个term 出现的频率 次数越多分数越高
+    IDF:单个term 出现在所有doc中的次数越多，分数越低
+  3.length frequency
+    每个字段值得长度，越长，分数越低
+
+  4，vector space model
+       query vector 
+
+     d多个term 对于所有doc计算一个分数
+     hello term在所有的doc总额分数 2
+     world term 所有doc总数分数  5
+     query  vector[2,5] 
+ 
+   docvector
+    会给每一个doc,n那每个term 计算出一个分数来，hello 有一个分数，world有一个分数，在哪所有term分数组成一个doc
+    vector
+    最后计算 每个doc vectory 计算出对query vector 的弧度
+    最后基于这个弧度给出一个docd相对于query 中多个term 的一个分数
+    弧度越大 分数越低
+
+
+
+
+
+27.相关度分数的优化方式
+
+ 1.query-time boost
+  增强分数
+  GET forum/article/_search
+{
+  "query": {
+    "bool": {
+      "should": [
+        {
+          "match": {
+            "title": {
+              "query": "java",
+              "boost":2
+            }
+          }
+        },
+        {
+          "match": {
+            "content": "java"
+          }
+        }
+      ]
+    }
+  }
+}
+2,权重的修改
+GET  forum/article/_search
+{
+  "query": {
+    "bool": {
+      "should": [
+        {
+          "match": {
+            "title": "java"
+          }
+        },
+        {
+          "match": {
+            "content": "java"
+          }
+        },
+         {
+           "bool": {
+             "should": [
+               {
+                 "match": {
+                   "sub_title": "earned"
+                 }
+               }
+             ]
+           }
+         }        
+      ]
+    }
+  }
+}
+
+3,降低权重
+GET forum/article/_search
+{
+  "query": {
+    "boosting": {
+      "positive": {
+        "match": {
+          "content": "java"
+        }
+      },
+      "negative": {
+        "match": {
+          "content": "spark"
+        }
+      
+      },
+      "negative_boost": 0.2
+    }
+  }
+}
+
+negative_boost：给找到的分数乘以0.2减低分数
+
+4,不计算分数
+
+GET forum/article/_search
+{
+  "query": {
+    "bool": {
+      "should": [
+        {
+          "constant_score": {
+           "query": {
+             "match": {
+               "content": "java"
+             }
+           }
+          }
+        }
+      ]
+    }
+  }
+}
+
+GET forum/article/_search
+{
+   "query": {
+     "function_score": {
+       "query": {
+         "multi_match": {
+           "query": "java spark",
+           "fields": ["title","content"]
+         }
+       },
+       "field_value_factor": {
+         "field": "follower_num",
+         "modifier": "log1p",
+         "factor": 0.2
+       },
+       "boost_mode": "sum",
+        "max_boost": 2  
+     }
+   }
+}
+
+如果field将会对每个doc分数乘以follower_num 如果是0，分数就会变成0
+效果不好。
+添加 log1p   modeifier :log1p new_score=old_score*log(1+number)
+杂家factor 进一步影响分数，newscore=old-score*log(1+fator*number)
+
+
+boost_mode .可以决定分数和指定字段如何计算 
+max_boost 限制计算的分数不找富哦这个值
+
+
+
+29纠正错误
+fuzzy 在拼写错误的时候可以进行金正
+fuziness  允许在某个范围内，太大不起作用
+
+GET  my_index/my_type/_search
+{
+  "query": {
+    "fuzzy": {
+      "text":{
+        "value": "surprize",
+        "fuzziness": 50
+      }
+    }
+  }
+}
+
+也可已使用下面方式
+ GET my_index/my_type/_search
+{
+  "query": {
+    "match": {
+      "text": 
+    {
+      "query": "SURPIZE ME",
+      "fuzziness": "AUTO"
+    }
+    }
+  }
+}
+
+
+30 ik分词器
+1、在elasticsearch中安装ik中文分词器
+
+（1）git clone https://github.com/medcl/elasticsearch-analysis-ik
+（2）git checkout tags/v5.2.0
+（3）mvn package
+（4）将target/releases/elasticsearch-analysis-ik-5.2.0.zip拷贝到es/plugins/ik目录下
+（5）在es/plugins/ik下对elasticsearch-analysis-ik-5.2.0.zip进行解压缩
+（6）重启es
+   两种分词器
+    ik_max_word:颗粒细，拆分细，
+    ik_smart :颗粒度粗，
+ GET my_index/my_type/_search
+{
+  "query": {
+    "match": {
+      "text": "16岁少女结婚好还是单身好"
+    }
+  }
+}
+GET  _analyze
+{
+  "text": "绝对是空格键绝对是空格键绝zhong'guo'ren",
+   "analyzer": "ik_max_word"
+}   
+
+31.ik分词器配置详解
+   IKAnalyzer.cfg.xml 配置自定义词库
+   main.dic ik内置的中文词库 总共 27万
+   quantifier.dic 放以一些单位相关词
+   surname 中国的形式
+   stopworld.dic英文停用词
+
+  ik最终要的两个配置文件
+   mian.dic包含原生的中文词语，会按照这个里面的词语分词
+   stopword，dic 包含英语通用词
+ 
+2，自定义词库
+   建立自己的词库 ，网红 
+    custom/mydict.dic
+    重启es
+    建立停用词库 比如  了  的 啥 不建立索引
+    customer/ext_stopword.dic补充停用词
+
+
+
+33，深入bucket metric
+
+bucket 相当于分许 group by userid
+metricc ：count（*） 对于每个userid 的bucket所有的数据计算一个数量
+ 当我们有一堆bucket后就可以对每个bucker中的数据进行聚合分词，比如平均数
+
+
+34.聚合
+GET tvs/sales/_search
+{
+   "size": 0, 
+  "aggs": {
+    "popular_clour": {
+      "terms": {
+        "field": "color"
+      }
+    }
+  }
+}
+
+aggs固定于法，对一份数据执行分组聚合操作
+size 只获取聚合结果，而不要执行聚合的原始数据
+popular_clour：聚合名字
+terms:根据值进行分组
+  "aggregations": {
+    "popular_color": {
+      "doc_count_error_upper_bound": 0,
+      "sum_other_doc_count": 0,
+      "buckets": [
+        {
+          "key": "红色",
+          "doc_count": 4
+        },
+        {
+          "key": "绿色",
+          "doc_count": 2
+        },
+        {
+          "key": "蓝色",
+          "doc_count": 2
+        }
+      ]
+    }
+  }
+}
+hits.hits 我们指定size是0，所有hits,hits就是空的
+aggregations：聚合结果
+buckets：指定的field划分的bukets
+key 每个bucket 对应的那个孩子
+doc_count 数量颜色
+
+
+按照数量降序排序
+
+GET /tvs/sales/_search
+{
+  "size": 0,
+  "aggs": {
+    "group_by_color": {
+      "terms": {
+        "field": "color"
+      },
+      "aggs": {
+        "avg_price": {
+          "avg": {
+            "field": "price"
+          }
+        }
+      }
+    }
+  }
+}
+
+{
+  "took": 9,
+  "timed_out": false,
+  "_shards": {
+    "total": 5,
+    "successful": 5,
+    "failed": 0
+  },
+  "hits": {
+    "total": 8,
+    "max_score": 0,
+    "hits": []
+  },
+  "aggregations": {
+    "group_by_color": {
+      "doc_count_error_upper_bound": 0,
+      "sum_other_doc_count": 0,
+      "buckets": [
+        {
+          "key": "红色",
+          "doc_count": 4,
+          "avg_price": {
+            "value": 3250
+          }
+        },
+        {
+          "key": "绿色",
+          "doc_count": 2,
+          "avg_price": {
+            "value": 2100
+          }
+        },
+        {
+          "key": "蓝色",
+          "doc_count": 2,
+          "avg_price": {
+            "value": 2000
+          }
+        }
+      ]
+    }
+  }
+}
+
+在颜色下进行品牌的分组计算平均价
+GET /tvs/sales/_search
+{
+  "size": 0,
+  "aggs": {
+    "group_color": {
+      "terms": {
+        "field": "color"
+      },
+      "aggs": {
+        "avg_price": {
+          "avg": {
+            "field": "price"
+          }
+        },
+          "group_brand": {
+            "terms": {
+              "field": "brand"
+            }, 
+            "aggs": {
+              "avg_brand-price": {
+                "avg": {
+                  "field": "price"
+                }
+              }
+            }
+          }
+     
+      
+      }
+    }
+  }
+}
+
+
+
+GET /tvs/sales/_search
+{
+  "size": 0,
+  "aggs": {
+    "gtoup_color": {
+      "terms": {
+        "field": "color"
+      },
+      "aggs": {
+        "avg_price": {
+          "avg": {
+            "field": "price"
+          }
+        },
+        "max-price":{
+          "max": {
+            "field": "price"
+          }
+        },
+        "min-price":{
+          "min": {
+            "field": "price"
+          }
+        },
+        "sum_price":{
+          "sum": {
+            "field": "price"
+          }
+        }
+      }
+    }
+  }
+}
+
+
+
+38 histogram 类似terms,进行分组，不同的是，
+他是按照 interval  的值进行区分的
+histogram ：{
+  “field”:"price",
+  "interval:20000}
+
+
+ 根据price的值属于那个区间进行分组
+
+ GET /tvs/sales/_search
+{
+  "size": 0,
+  "aggs": {
+    "price": {
+      "histogram": {
+        "field": "price",
+        "interval": 2000
+      },
+      "aggs": {
+        "sum_price": {
+          "sum": {
+            "field":"price"
+          }
+        }
+      }
+      
+    }
+  }
+  
+}
+
+39.date_histogram 
+
+
+  技术按照date的field以及interval,按照一定的日期间隔
+  区划分bucket
+
+   date  interval = 1m
+   2018-11-01----2018-11-30
+   2018-12-01----2018-12-30
+
+    回去扫描每个数据的date field,判断
+    date 落在那个bucket 中。就将其放在哪个bucket中
+
+
+    min-doc-count 及时没有数据在interval
+    区间中，那么这个区间也要返回数据，不然过滤掉这个区间
+
+
+    extended_bounds min max h划分bucket的
+    时候限定其实日期和结束日期
+
+    GET  /tvs/sales/_search
+{
+  "size":0,
+  "aggs": {
+    "sales": {
+      "date_histogram": {
+        "field": "sold_date",
+        "interval": "month",
+        "format": "yyyy-MM-dd",
+        "min_doc_count": 0,
+        "extended_bounds":{
+        "min":"2016-01-01",
+        "max":"2017-12-31"
+          
+        }
+      }
+    }
+  }
+}
+
+
+
+
+GET tvs/sales/_search
+{
+  "size": 0,
+  "aggs": {
+    "group_by_date": {
+      "date_histogram": {
+        "field": "sold_date",
+        "interval": "quarter",
+        "format": "yyyy-MM-dd",
+        "min_doc_count": 0,
+        "extended_bounds":{
+          "min":"2016-01-01",
+          "max":"2017-12-31"
+        }
+      },
+      "aggs": {
+        "group_by_brand": {
+          "terms": {
+            "field": "brand"
+          },
+          "aggs": {
+            "sum-price": {
+              "avg": {
+                "field": "price"
+              }
+            }
+          }
+        },
+        "totle_sum":{
+          "sum": {
+            "field": "price"
+          }
+        }
+      }
+    }
+  }
+  
+}
+
+GET tvs/sales/_search
+{
+  "query": {
+    "term": {
+      "brand": {
+        "value": "小米"
+      }
+    }
+  },
+  "aggs": {
+    "group_color": {
+      "terms": {
+        "field": "color"
+      }
+    }
+  }
+}
+商品长虹品牌和全局品牌的平均价格
+
+GET tvs/sales/_search
+{
+  "size": 0,
+  "query": {
+    "term": {
+      "brand": {
+        "value": "长虹"
+      }
+    }
+  },
+  "aggs": {
+    "avg_price": {
+      "avg": {
+        "field": "price"
+      }
+    },
+    "all-price":{
+      "global": {}
+       , "aggs": {
+         "all_brand_avg_price": {
+           "avg": {
+             "field": "price"
+           }
+         }
+       }
+      
+    }
+  }
+  
+}
+
+global :就是global bucket 就是讲所有的数据纳入聚合的
+scope,而不管之前的query
+过滤条件和聚合 
+GET  tvs/sales/_search
+{
+  "size": 0,
+  "query": {
+    "constant_score": {
+      "filter": {
+        "range": {
+          "price": {
+            "gte": 1200
+          }
+        }
+      }
+    }
+  },
+  "aggs": {
+    "avg_price": {
+      "avg": {
+        "field": "price"
+      }
+    }
+  }
+  
+}
+
+tvs/sales/_search
+{
+   "size":0,
+  "query": {
+    "term": {
+      "brand": {
+        "value": "长虹"
+      }
+    }
+  },
+  "aggs": {
+    "recent_150d": {
+      "filter": {
+        "range": {
+          "sold_date": {
+            "gte": "now-1030d"
+          }
+        }
+      },
+      "aggs": {
+        "avg_price": {
+          "avg": {
+            "field": "price"
+          }
+        }
+      }
+    }
+  }
+  
+}
+aggs.filter，针对的是聚合去做的
+
+如果放query里面的filter，是全局的，会对所有的数据都有影响
+
+但是，如果，比如说，你要统计，长虹电视，最近1个月的平均值; 最近3个月的平均值; 最近6个月的平均值
+
+bucket filter：对不同的bucket下的aggs，进行filter"
+
+深层进行排序
+GET tvs/sales/_search
+{
+  "size": 0,
+  "aggs": {
+    "group_by_color": {
+      "terms": {
+        "field": "color"
+      },
+      "aggs": {
+        "group_brand": {
+          "terms": {
+            "field": "brand",
+            "order": {
+              "avg_price": "asc"
+            }
+          },
+          "aggs": {
+            "avg_price": {
+              "avg": {
+                "field": "price"
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+}
+
+
+47.深入聚合数据分析 并行聚合算法 ，三角选择算法，近似聚合算法
+ 1 并行聚合算法
+  有些聚合比较适合并行算法，如 max
+   max. 每一个节点把最大的值拿到协调节点进行比较，替换最大值
+   有些就不爱适合 count（distinct）
+2.三角聚合算法
+  精准+实时 没有大数据，数据量小。单机可以，
+  精准+大数据 hadoop 批处理。非实时，可以处理海量数据，保证精准
+  大数据—+实时 es.不准确。可能有误差
+3.近似聚合算法
+ 如果采用。延时在100ms
+ 如果采用精准算法，延时及时培，es错误
+
+每个季度下品牌进行去重获取结果数量
+GET tvs/sales/_search
+{
+  "size": 0,
+  "aggs": {
+    "months": {
+      "date_histogram": {
+        "field": "sold_date",
+        "interval": "month"
+      },
+      "aggs": {
+        "distinct_color": {
+          "cardinality": {
+            "field": "brand"
+          }
+        }
+      }
+    }
+  }
+}
+
+
+49.cardinality 算法优化
+
+ get tvs/sales/_search
+ {
+  "size":0.
+  "aggs":{
+     "distinct_brand":{
+        "cardinality":{
+          "field":"brand",
+          "precision_threshold":100
+        }
+     }
+}
+
+}
+
+precistion 在多少个unque value 以内 cardinality 几乎保证100%准确
+cardinality 算法 precision_threshould*8内存消耗
+
+precision值设置越大，占用内存越大，单可以保证100%的准确率
+官方 说 100 计算百万数据错误率在5%以内
+
+
+
+2 HyperlOGLOG++ hll性能
+
+ cardinality 底层算法 Hll算法
+
+ 会对所有的unquie value去hash值 。通过近似值去求distcint count 
+
+ 默认情况下，发动cardintiy d的时候，活动太的对所有的field 
+ 去hash 值，此时将hash值前置，在建立index时候建立
+
+ put /tvs
+ {
+  "mappings“：{
+    ”properties:{
+      "brand":{
+        "type":"text",
+         "fields":{
+          "hsah":{
+            type:"murmur3"
+         }
+      }
+    }
+}
+ }
+需求：比如有一个网站，记录下了每次请求的访问的耗时，需要统计tp50，tp90，tp99
+
+tp50：50%的请求的耗时最长在多长时间
+tp90：90%的请求的耗时最长在多长时间
+tp99：99%的请求的耗时最长在多长时间
+get tvs/sale/_search
+{
+  "size：0，
+  ”aggs“:{
+  "distinct_brand":{
+  "cardinality":{
+  "field":"brand.hsah
+  "prestion-threshould:100 GET /website/logs/_search
+{
+  "size": 0,
+  "aggs": {
+    "group-by":{
+      "terms": {
+        "field": "province"
+      },
+      "aggs": {
+        "latency_percentiles": {
+        "percentiles": {
+          "field": "latency",
+          "percents": [
+            50,
+            95,
+            99
+          ]
+        }
+      },
+        "latency_avg":{
+          "avg": {
+            "field": "latency"
+          }
+        }
+  
+      }
+    }
+    
+  }
+}
+}
+}
+}
+
+GET /website/logs/_search
+{
+  "size": 0,
+  "aggs": {
+    "group-by":{
+      "terms": {
+        "field": "province"
+      },
+      "aggs": {
+        "latency_percentiles": {
+        "percentiles": {
+          "field": "latency",
+          "percents": [
+            50,
+            95,
+            99
+          ]
+        }
+      },
+        "latency_avg":{
+          "avg": {
+            "field": "latency"
+          }
+        }
+  
+      }
+    }
+    
+  }
+}
+
+51.percentiles rank
+ 计算某个范围内的占比
+
+按照品牌分组，计算电视机 销售价在100占比数目
+按照省份分组，计算请求时间在100 1000之间的占比
+GET website/logs/_search
+{
+  "size": 0,
+  "aggs": {
+    "group_by_brand": {
+      "terms": {
+        "field": "province"
+      },
+      "aggs": {
+        "latency_percentis_Ranks": {
+          "percentile_ranks": {
+            "field": "latency",
+            "values": [
+              100,
+              1000
+            ]
+          }
+        }
+      }
+    }
+  }
+}
+
+percentile 的优化
+TDigest算法，用很多节点执行百分比计算，近似估计，有误差，节点越多
+越精准
+compression 默认100
+限制节点数 compression*20=2000个node计算
+越大性能越差，精准度越高，内存越多
+
+一个节点占用32字节 100*20*32=64kb
+
+52倒排索引 正排索引
+
+ 1，在搜索导数据的时候
+ 2.那搜索的doc 再去倒排索引搜索，agg-field的值，必须遍历所有的
+ 倒排索引
+
+ 3.如果使用正派索引就不必去遍历所有的值，可能搜索到一半就把所偶遇的
+ 的agg_field都搜索到了
+
+53.doc value原理
+  1，index-time 生成
+  put post生成doc value
+  2.正派索引也会写入到磁盘，
+  os cache会缓存横排索引，当内存不足时候，就会把正派索引进行写入磁盘
+  3，性能问题
+    给jvm 更少的内存， os  cache更多的内存
+
+
+ 2，column压缩
+
+    1，相同值进行保存单只
+    2.少于256值，使用 table encoding
+    3.大于256 看有没有公约数，保留最大公约数
+    4.没有公约数，采用 offset 压缩方式
+ 3.如果不需要聚合可以禁用
+
+  put index
+  {
+    "ampping":{
+      "type":{
+        "properties":{
+          "my-field":{
+            "type":"keyworld"
+            "doc_valus":false
+          }
+        }
+      }
+    }
+  }
+
+54. fielddate
+
+ 1对于分词的字段，进行聚合包错
+ GET /test_index/test_type/_search
+{
+  "aggs": {
+    "group": {
+      "terms": {
+        "field": "cotntent",
+        "size": 10
+      }
+    }
+  }
+}
+对分词直接聚合报错，你必须打开fielddata,然后将正派索引加入到内存中，才可以对分词field执行聚合操作，会下哈
+大量内存
+
+2PUT /test_index/_mapping/test_type
+{
+  "properties": {
+    "content":{
+      "type": "text",
+      "fielddata": true
+    }
+  }
+}
+
+分词fieldddata 的工作原理
+ 
+ 1.不分词的field，那么字建立index-time，就会建立doc value,在进行聚合的时候就可以使用
+ doc value
+ 2,分词的field 建立索引的时候是不进行建立doc value
+
+
+
+如果一定要进行分词进行聚合操作就必须，fielddate=true，然后加你聚合索引
+的时候，现场就将field对应的数据，建立一份正派索引，和doc values类似
+但是只会讲 fielddate正派索引架子啊到内存哪种，然后基于内存中的fielddata正排索引执行分词field的聚合操作如果基于磁盘和os cache，那么性能会很差
+
+55.fileddate 核心原理
+ 1.filed加载到内存的过程lazy课程大纲
+
+1、fielddata核心原理
+
+fielddata加载到内存的过程是lazy加载的，对一个analzyed field执行聚合时，才会加载，而且是field-level加载的
+一个index的一个field，所有doc都会被加载，而不是少数doc
+不是index-time创建，是query-time创建
+
+2、fielddata内存限制
+
+indices.fielddata.cache.size: 20%，超出限制，清除内存已有fielddata数据
+fielddata占用的内存超出了这个比例的限制，那么就清除掉内存中已有的fielddata数据
+默认无限制，限制内存使用，但是会导致频繁evict和reload，大量IO性能损耗，以及内存碎片和gc
+
+3、监控fielddata内存使用
+
+GET /_stats/fielddata?fields=*
+GET /_nodes/stats/indices/fielddata?fields=*
+GET /_nodes/stats/indices/fielddata?level=indices&fields=*
+
+4、circuit breaker
+
+如果一次query load的feilddata超过总内存，就会oom --> 内存溢出
+
+circuit breaker会估算query要加载的fielddata大小，如果超出总内存，就短路，query直接失败
+
+indices.breaker.fielddata.limit：fielddata的内存限制，默认60%
+indices.breaker.request.limit：执行聚合的内存限制，默认40%
+indices.breaker.total.limit：综合上面两个，限制在70%以内
+
+
+56.fileddata 细颗粒
+  1min 仅仅加载至少出现1%在doc中，才会去加载到内存中
+  比如 某个值 hello  总共有1000doc hello必须在10个
+  doc出现，那么这个hello对应的fileddata才会加载到内存
+
+  2.min_segment_size 至少500doc 的segment不加字啊fileddate
+
+  加载fileddata的时候，也按照segment去进行架子啊，某个
+  segment里面的doc数量少于500个，哪呢和这个segment
+  的fileddata不加字啊到内存中
+
+
+post index/-mappIng/tyep
+{
+  "properties:{
+  "myfiled":{
+  "type：”text“.
+   "fileddata":{
+   "filter":{
+     "frequency":{
+     "min":0.01,
+     "min-segment_sizesegment_size"
+   }
+ }
+ }
+}
+}
+}
+
+
+57.建立fileddata记载机制以及标记
+ 当我们进行聚合索引的时候，会给分析的filed建立正派索引
+。是在query time的时候，我们是否可以再建立index-time时候建立索引
+
+
+
+   POST  /test_index/_mapping/test_type
+{
+  "properties": {
+    "test_field":{
+      "type": "string",
+      "fielddata": {
+        "loading":"eager"
+      }
+    
+    }
+  }
+}
+ 2.当fileddata中有大量的重复字段
+  doc1 status1
+  doc2 status2
+  doc3status2
+
+ 建立全局索引 global  ordinal 原理解释
+
+
+ status1 0
+ staus2  1
+
+  doc1 0
+  doc2 1
+  doc3 1
+
+  建立fileddata 也是这个样子，减少重复字符串出现的次数
+
+POST  test_index/_mapping/test_type
+{
+  "properties": {
+    "test_filed":{
+      "type": "string",
+       "fielddata": {
+         "loading":"eager_global_ordinals"
+       }
+    }
+  }
+}
+
+
+58深度优先 广度优先
+
+ 1，深度优先
+   比如我们有10万个sctor 最后只要10 actor就可以了
+
+    但是我们深度优先，构架了一棵树，10 万个 actor 每一个actor有 10wan
+    个filem,  我们裁剪了大量数据
+
+ 2.广度优先
+   在最外层进行 建立，只需要在最外层裁剪，后的数据，在进行裁剪filem    
+
+ aggs:{
+ actors:{
+   ""terms:{
+     "filed":"actor",
+     "size":10,
+     "collect-mode":"breasth_first"
+ }
+    "aggs":{
+      "costtars":{
+        "terms":{
+          "filed":"films",
+          "size":5
+        }
+      }
+    }
+}
+}
+
+60数据建模
+优点：数据不冗余，维护方便
+缺点：应用层join，如果关联数据过多，导致查询过大，性能很差
 
 
 
