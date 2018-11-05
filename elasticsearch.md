@@ -3432,6 +3432,85 @@ POST  test_index/_mapping/test_type
 缺点：应用层join，如果关联数据过多，导致查询过大，性能很差
 
 
+path_hierarchy tokenizer讲解
+
+/a/b/c/d --> path_hierarchy -> /a/b/c/d, /a/b/c, /a/b, /a
+
+PUT /fs 
+{
+  "settings": {
+    "analysis": {
+      "analyzer": {
+        "paths":{
+          "tokenizer":"path_hierarchy" //fenci
+        }
+      }
+    }
+  }
+}
+
+PUT /fs/_mapping/file
+{
+  "properties": {
+    "name":{
+      "type": "keyword"
+    },
+    "path":{
+      "type": "keyword",
+      "fields": {
+        "tree":{
+          "type": "text",
+          "analyzer": "paths"
+        }
+      }
+    }
+  }
+}
+
+64.全局锁
+  数据建模 ，3中颗粒度
+  最粗的一种全局锁
+  乐观锁
+   多个线程去修改doc,他的version 已经修改，就会拿最新的vsersion 最后修改
+  悲观岁
+  只有你可以进行操作，其他人不能进行操作
+
+  1.全局锁
+  put /fs/lock/global/_create
+  {}
+  fs:你要上锁的index
+  lock：就是制定的全局锁的index的type
+  gloabl:全局锁对应的这个doc的id
+  _create 强制必须创建，如果所已经崔存在，就会报错
+
+   DELETE /fs/lock/global
+
+
+  3、全局锁的优点和缺点
+
+优点：操作非常简单，非常容易使用，成本低
+缺点：你直接就把整个index给上锁了，这个时候对index中所有的doc的操作，都会被block住，导致整个系统的并发能力很低
+
+上锁解锁的操作不是频繁，然后每次上锁之后，执行的操作的耗时不会太长，用这种方式，方便 
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
 
 
 
