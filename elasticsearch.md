@@ -3494,8 +3494,304 @@ PUT /fs/_mapping/file
 上锁解锁的操作不是频繁，然后每次上锁之后，执行的操作的耗时不会太长，用这种方式，方便 
 
 
+65.document悲观锁
+
+  全局锁 一次性就锁住整个index,对于整个index所有的增删改查，block，如果不频繁，还可以
+
+  更细颗粒度的锁，document锁，每次操作的你要执行增删改查的doc,doc锁住，其他线程就不能对
+  起操作，只是锁了部分线程，其他线程还可以进行增删改操作的，
+
+  document锁，是用脚本进行上锁
+
+POST /fs/lock/1/_update
+{
+  "upsert": { "process_id": 123 },
+  "script": "if ( ctx._source.process_id != process_id ) { assert false }; ctx.op = 'noop';"
+  "params": {
+    "process_id": 123
+  }
+}
 
 
+
+ fs/lock 是固定的，就是fs下lock type 专门进行上锁
+ fs/lock/id 比如1,就是上锁的doc
+
+
+ 1.当不存在所得时候就进行添加 upsert
+  创建了一条 fs/lock/1  ,为param设置 process_id =123
+ 2当发现上锁了，就执行 upfdate操作，scrip就会对比，procss_id r
+ 如果相同就是同一个进程，可以操作，如果不通就报错
+
+
+
+put  fs/lock/_bulk
+{"delete":{"_id":1}}
+
+
+delete fs/lock/1
+
+66.基于共享锁，和排他锁实现悲观锁并发操作
+ 共享锁：数据是共享的，多个线程过来，都可以共享一个数据
+  ，然后执行度操作
+  排他锁：排他操作，只能一个线程，获取增删改操作
+   读写分离
+  1.当读取数据的时候，任意线程都可以同时进行读取数据，每个
+  线程都可以上一个共享锁，，如果其他线程
+  进行修改，如果已经上了共享锁，就不允许上排他锁们必须等待
+
+  则，如果有人度数据，就不允许修改数据
+
+  2，如果数据修改，就上排他锁，
+  那么其他线程过来要修改数据，也尝试上排他锁，此时岁长途，必须等待，
+  如果有人读操作，也不允许失败，共享锁，排他锁 互斥
+
+  则，在修改的数据，不允许其他人膝盖数据妈也不允许读数据，
+
+加共享锁
+POST /fs/lock/1/_update 
+{
+  "upsert": { 
+    "lock_type":  "shared",
+    "lock_count": 1
+  },
+  "script": {
+    "lang": "groovy",
+    "file": "judge-lock-2"
+  }
+}
+
+3、对共享锁进行解锁
+
+POST /fs/lock/1/_update
+{
+  "script": {
+    "lang": "groovy",
+    "file": "unlock-shared"
+  }
+}
+
+排他锁
+PUT /fs/lock/1/_create
+{ "lock_type": "exclusive" }
+
+5、解锁排他锁
+
+DELETE /fs/lock/1
+
+67.netesd
+object类型数据结构的底层存储。。。
+
+{
+  "title":            [ "花无缺", "发表", "一篇", "帖子" ],
+  "content":             [ "我", "是", "花无缺", "大家", "要不要", "考虑", "一下", "投资", "房产", "买", "股票", "事情" ],
+  "tags":             [ "投资", "理财" ],
+  "comments.name":    [ "小鱼儿", "黄药师" ],
+  "comments.comment": [ "什么", "股票", "推荐", "我", "喜欢", "投资", "房产", "风险", "收益", "大" ],
+  "comments.age":     [ 28, 31 ],
+  "comments.stars":   [ 4, 5 ],
+  "comments.date":    [ 2016-09-01, 2016-10-22 ]
+
+
+GET /website/blogs/_search
+{
+  "query": {
+    "bool": {
+      "must": [
+        { "match": { "comments.name": "黄药师" }},
+        { "match": { "comments.age":  28      }} 
+      ]
+    }
+  }
+}
+
+修改mapping，将comments的类型从object设置为nested
+
+PUT /website
+{
+  "mappings": {
+    "blogs": {
+      "properties": {
+        "comments": {
+          "type": "nested", 
+          "properties": {
+            "name":    { "type": "string"  },
+            "comment": { "type": "string"  },
+            "age":     { "type": "short"   },
+            "stars":   { "type": "short"   },
+            "date":    { "type": "date"    }
+          }
+        }
+      }
+    }
+  }
+}
+
+{ 
+  "comments.name":    [ "小鱼儿" ],
+  "comments.comment": [ "什么", "股票", "推荐" ],
+  "comments.age":     [ 28 ],
+  "comments.stars":   [ 4 ],
+  "comments.date":    [ 2014-09-01 ]
+}
+{ 
+  "comments.name":    [ "黄药师" ],
+  "comments.comment": [ "我", "喜欢", "投资", "房产", "风险", "收益", "大" ],
+  "comments.age":     [ 31 ],
+  "comments.stars":   [ 5 ],
+  "comments.date":    [ 2014-10-22 ]
+}
+{ 
+  "title":            [ "花无缺", "发表", "一篇", "帖子" ],
+  "body":             [ "我", "是", "花无缺", "大家", "要不要", "考虑", "一下", "投资", "房产", "买", "股票", "事情" ],
+  "tags":             [ "投资", "理财" ]
+}
+GET /website/blogs/_search
+{
+  "size": 0,
+  "aggs": {
+    "comments_path": {
+      "nested": {
+        "path": "comments"
+      },
+      "aggs": {
+        "group_age": {
+          "histogram": {
+            "field": "comments.age",
+            "interval": 10
+          },
+          "aggs": {
+            "revers_path": {
+              "reverse_nested": {
+               
+              },
+              "aggs": {
+                "group_tag": {
+                  "terms": {
+                    "field": "tags.keyword"
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+
+  GET /website/blogs/_search
+{
+  "size": 0,
+  "aggs": {
+    "comments-path": {
+      "nested": {
+        "path": "comments"
+      },
+      "aggs": {
+        "group_by_date": {
+          "date_histogram": {
+            "field": "comments.date",
+            "interval": "month",
+            "format": "yyyy-MM-dd"
+          },
+          "aggs": {
+            "group_start": {
+              "avg": {
+                "field": "comments.stars"
+              }
+            }
+          }
+        }
+      }
+    }
+  }
+}
+
+69.父子关系
+
+  nested  objext 导致数据冗余，将多个数据放在一起，不容易维护
+
+  使用父子关系，将多个实体分割，一对多关系，更新一个不影响其他
+  维护方便，性能比较好，es会自动处理底层关联关系，并通过一些手段，保证
+  搜索性能
+
+  要点，保证父子数据再通一个shard
+  父子关系数据存在一个shard中，而且还有映射其关联关系的元数据，那么搜索父子关系数据的时候，不用跨分片，一个分片本地自己就搞定了，性能当然高咯
+
+
+shard路由的时候，id=1的rd_center doc，默认会根据id进行路由，到某一个shard
+
+PUT /company/employee/1?parent=1 
+{
+  "name":  "张三",
+  "birthday":   "1970-10-24",
+  "hobby": "爬山"
+}
+维护父子关系的核心，parent=1，指定了这个数据的父doc的id
+
+此时，parent-child关系，就确保了说，父doc和子doc都是保存在一个shard上的。内部原理还是doc routing，employee和rd_center的数据，都会用parent id作为routing，这样就会到一个shard
+
+就不会根据id=1的employee doc的id进行路由了，而是根据parent=1进行路由，会根据父doc的id进行路由，那么就可以通过底层的路由机制，保证父子数据存在于一个shard中
+
+GET /company/employee/_search
+{
+  "query": {
+    "has_parent": {
+      "parent_type": "rd_center",
+      "query": {
+        "match": {
+          "country.keyword": "中国"
+        }
+      }
+    }
+  }
+}
+
+
+
+GET /company/rd_center/_search
+{
+  "query": {
+    "has_child": {
+      "type": "employee",
+      "min_children": 2, 
+      "query": {
+        "match_all": {}
+      }
+    }
+  }
+}
+
+
+GET /company/rd_center/_search
+{
+  "query": {
+    "has_child": {
+      "type": "employee",
+      "query": {
+        "match": {
+          "name": "张三"
+        }
+      }
+    }
+  }
+}
+
+GET /company/rd_center/_search
+{
+  "query": {
+    "has_child": {
+      "type": "employee",
+      "query": {
+        "range": {
+          "birthday": {
+            "gte": "1980-01-01"
+          }
+        }
+      }
+    }
+  }
+}
 
 
 
